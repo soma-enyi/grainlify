@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Plus, Settings as SettingsIcon, Loader2, AlertCircle } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Settings as SettingsIcon, Loader2, AlertCircle, Package } from 'lucide-react';
 import { useTheme } from '../../../shared/contexts/ThemeContext';
 import { DashboardTab } from '../components/dashboard/DashboardTab';
 import { IssuesTab } from '../components/issues/IssuesTab';
