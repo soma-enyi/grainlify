@@ -195,6 +195,7 @@ export const getProjectsContributed = (userId?: string, login?: string) => {
     status: string;
     ecosystem_name?: string;
     language?: string;
+    owner_avatar_url?: string;
   }>>(`/profile/projects${query}`, { requiresAuth: true });
 };
 

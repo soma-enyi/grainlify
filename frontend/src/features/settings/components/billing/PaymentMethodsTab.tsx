@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { Plus, Trash2, Wallet, Copy, CheckCircle2, Star } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, Trash2, Wallet, Copy, CheckCircle2, Star, X } from 'lucide-react';
 import { useTheme } from '../../../../shared/contexts/ThemeContext';
 import { PaymentMethod, EcosystemType, CryptoType } from '../../types';
+import casperIcon from '../../../../assets/casper.png';
 
 interface PaymentMethodsTabProps {
   paymentMethods: PaymentMethod[];
@@ -32,6 +34,8 @@ export function PaymentMethodsTab({
         return ['usdc', 'usdt', 'strk'];
       case 'stellar':
         return ['usdc', 'usdt', 'xlm'];
+      case 'casper':
+        return ['usdc', 'usdt', 'cspr'];
       default:
         return ['usdc', 'usdt'];
     }
@@ -69,11 +73,12 @@ export function PaymentMethodsTab({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const getEcosystemIcon = (ecosystem: EcosystemType) => {
+  const getEcosystemColor = (ecosystem: EcosystemType) => {
     const colors = {
-      ethereum: 'from-[#627EEA] to-[#4B5ECC]',
-      starknet: 'from-[#EC796B] to-[#D96657]',
-      stellar: 'from-[#14B6E7] to-[#0E8FB8]',
+      ethereum: '#627EEA', // Ethereum brand color
+      starknet: '#EC796B', // Starknet brand color
+      stellar: '#14B6E7', // Stellar brand color
+      casper: '#1A1A1A', // Casper brand color (dark)
     };
     return colors[ecosystem];
   };
@@ -124,8 +129,19 @@ export function PaymentMethodsTab({
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-4 flex-1">
                   {/* Ecosystem Icon */}
-                  <div className={`w-12 h-12 rounded-[14px] bg-gradient-to-br ${getEcosystemIcon(method.ecosystem)} flex items-center justify-center flex-shrink-0`}>
-                    <Wallet className="w-6 h-6 text-white" />
+                  <div 
+                    className="w-12 h-12 rounded-[14px] flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: getEcosystemColor(method.ecosystem) }}
+                  >
+                    {method.ecosystem === 'casper' ? (
+                      <img 
+                        src={casperIcon} 
+                        alt="Casper" 
+                        className="w-6 h-6 object-contain"
+                      />
+                    ) : (
+                      <Wallet className="w-6 h-6 text-white" />
+                    )}
                   </div>
 
                   {/* Details */}
@@ -229,14 +245,12 @@ export function PaymentMethodsTab({
       )}
 
       {/* Add Payment Method Modal */}
-      {showAddModal && (
-        <>
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" onClick={() => setShowAddModal(false)} />
-          
-          <div className={`fixed top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg rounded-[24px] shadow-[0_20px_60px_rgba(0,0,0,0.3)] z-[101] p-8 max-h-[90vh] overflow-y-auto ${
+      {showAddModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className={`relative w-full max-w-lg rounded-[24px] border shadow-[0_20px_60px_rgba(0,0,0,0.3)] p-8 overflow-hidden max-h-[90vh] overflow-y-auto ${
             theme === 'dark'
-              ? 'bg-[#3a3228] border-2 border-white/30'
-              : 'bg-[#d4c5b0] border-2 border-white/40'
+              ? 'bg-[#2d2820] border-white/20'
+              : 'bg-[#f5efe5] border-white/40'
           }`}>
             <div className="flex items-center justify-between mb-6">
               <h3 className={`text-[20px] font-bold transition-colors ${
@@ -244,13 +258,13 @@ export function PaymentMethodsTab({
               }`}>Add Payment Method</h3>
               <button 
                 onClick={() => setShowAddModal(false)} 
-                className={`w-8 h-8 rounded-[10px] border flex items-center justify-center transition-all ${
+                className={`w-8 h-8 rounded-[10px] backdrop-blur-[20px] border flex items-center justify-center transition-all ${
                   theme === 'dark'
-                    ? 'bg-white/[0.08] hover:bg-white/[0.15] border-white/20'
-                    : 'bg-white/30 hover:bg-white/50 border-white/40'
+                    ? 'bg-white/[0.1] hover:bg-white/[0.15] border-white/20'
+                    : 'bg-white/[0.3] hover:bg-white/[0.5] border-white/40'
                 }`}
               >
-                <Plus className={`w-4 h-4 rotate-45 ${
+                <X className={`w-4 h-4 transition-colors ${
                   theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
                 }`} />
               </button>
@@ -264,29 +278,43 @@ export function PaymentMethodsTab({
                 }`}>
                   Select Ecosystem
                 </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {(['ethereum', 'starknet', 'stellar'] as EcosystemType[]).map((ecosystem) => (
-                    <button
-                      key={ecosystem}
-                      onClick={() => handleEcosystemChange(ecosystem)}
-                      className={`p-4 rounded-[14px] backdrop-blur-[25px] border-2 transition-all ${
-                        selectedEcosystem === ecosystem
-                          ? 'border-[#c9983a] bg-[#c9983a]/10'
-                          : theme === 'dark'
-                            ? 'border-white/15 bg-white/[0.08] hover:bg-white/[0.12]'
-                            : 'border-white/25 bg-white/[0.15] hover:bg-white/[0.2]'
-                      }`}
-                    >
-                      <div className={`w-10 h-10 rounded-[10px] bg-gradient-to-br ${getEcosystemIcon(ecosystem)} mx-auto mb-2 flex items-center justify-center`}>
-                        <Wallet className="w-5 h-5 text-white" />
-                      </div>
-                      <p className={`text-[13px] font-semibold capitalize transition-colors ${
-                        theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
-                      }`}>
-                        {ecosystem}
-                      </p>
-                    </button>
-                  ))}
+                <div className="grid grid-cols-4 gap-3">
+                  {(['ethereum', 'starknet', 'stellar', 'casper'] as EcosystemType[]).map((ecosystem) => {
+                    const iconColor = getEcosystemColor(ecosystem);
+                    return (
+                      <button
+                        key={ecosystem}
+                        onClick={() => handleEcosystemChange(ecosystem)}
+                        className={`p-4 rounded-[14px] backdrop-blur-[25px] border-2 transition-all ${
+                          selectedEcosystem === ecosystem
+                            ? 'border-[#c9983a] bg-[#c9983a]/10'
+                            : theme === 'dark'
+                              ? 'border-white/15 bg-white/[0.08] hover:bg-white/[0.12]'
+                              : 'border-white/25 bg-white/[0.15] hover:bg-white/[0.2]'
+                        }`}
+                      >
+                        <div 
+                          className="w-10 h-10 rounded-[10px] mx-auto mb-2 flex items-center justify-center"
+                          style={{ backgroundColor: iconColor }}
+                        >
+                          {ecosystem === 'casper' ? (
+                            <img 
+                              src={casperIcon} 
+                              alt="Casper" 
+                              className="w-5 h-5 object-contain"
+                            />
+                          ) : (
+                            <Wallet className="w-5 h-5 text-white" />
+                          )}
+                        </div>
+                        <p className={`text-[13px] font-semibold capitalize transition-colors ${
+                          theme === 'dark' ? 'text-[#e8dfd0]' : 'text-[#2d2820]'
+                        }`}>
+                          {ecosystem}
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -366,7 +394,8 @@ export function PaymentMethodsTab({
               </button>
             </div>
           </div>
-        </>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -12,6 +12,7 @@ import (
 	"github.com/jagadeesh/grainlify/backend/internal/auth"
 	"github.com/jagadeesh/grainlify/backend/internal/config"
 	"github.com/jagadeesh/grainlify/backend/internal/db"
+	"github.com/jagadeesh/grainlify/backend/internal/github"
 )
 
 type UserProfileHandler struct {
@@ -686,6 +687,28 @@ LIMIT 10
 		}
 		defer rows.Close()
 
+		// Get access token if available (for authenticated user)
+		var accessToken string
+		if loginParam == "" {
+			// It's the authenticated user, try to get access token
+			sub, _ := c.Locals(auth.LocalUserID).(string)
+			if userID, parseErr := uuid.Parse(sub); parseErr == nil {
+				linkedAccount, err := github.GetLinkedAccount(c.Context(), h.db.Pool, userID, h.cfg.TokenEncKeyB64)
+				if err == nil {
+					accessToken = linkedAccount.AccessToken
+				}
+			}
+		} else if userIDParam != "" {
+			// Try to get access token for the specified user
+			if parsedUserID, parseErr := uuid.Parse(userIDParam); parseErr == nil {
+				linkedAccount, err := github.GetLinkedAccount(c.Context(), h.db.Pool, parsedUserID, h.cfg.TokenEncKeyB64)
+				if err == nil {
+					accessToken = linkedAccount.AccessToken
+				}
+			}
+		}
+
+		gh := github.NewClient()
 		var projects []fiber.Map
 		for rows.Next() {
 			var id uuid.UUID
@@ -698,12 +721,20 @@ LIMIT 10
 				continue
 			}
 
+			// Fetch owner avatar from GitHub (works for public repos even without token)
+			var ownerAvatarURL *string
+			repo, err := gh.GetRepo(c.Context(), accessToken, fullName)
+			if err == nil && !repo.Private {
+				ownerAvatarURL = &repo.Owner.AvatarURL
+			}
+
 			projects = append(projects, fiber.Map{
-				"id":              id.String(),
+				"id":               id.String(),
 				"github_full_name": fullName,
-				"status":          status,
-				"ecosystem_name":  ecosystemName,
-				"language":        language,
+				"status":           status,
+				"ecosystem_name":   ecosystemName,
+				"language":         language,
+				"owner_avatar_url": ownerAvatarURL,
 			})
 		}
 

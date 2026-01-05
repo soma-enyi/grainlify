@@ -23,8 +23,8 @@ export interface BillingProfile {
 }
 
 // Payment Method types
-export type CryptoType = 'usdc' | 'usdt' | 'eth' | 'strk' | 'xlm';
-export type EcosystemType = 'ethereum' | 'starknet' | 'stellar';
+export type CryptoType = 'usdc' | 'usdt' | 'eth' | 'strk' | 'xlm' | 'cspr';
+export type EcosystemType = 'ethereum' | 'starknet' | 'stellar' | 'casper';
 
 export interface PaymentMethod {
   id: number;
@@ -112,5 +112,10 @@ export interface WalletAddresses {
     usdc: string;
     usdt: string;
     xlm: string;
+  };
+  casper: {
+    usdc: string;
+    usdt: string;
+    cspr: string;
   };
 }

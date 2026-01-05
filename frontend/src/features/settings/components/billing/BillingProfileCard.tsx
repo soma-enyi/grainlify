@@ -14,23 +14,41 @@ export function BillingProfileCard({ profile, onClick }: BillingProfileCardProps
     switch (profile.status) {
       case 'verified':
         return (
-          <div className="flex items-center gap-2 px-4 py-2 rounded-[12px] bg-green-500/10 border border-green-500/30">
-            <Circle className="w-4 h-4 text-green-600 fill-green-600" />
-            <span className="text-[13px] font-medium text-green-700">Verified</span>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${
+            theme === 'dark'
+              ? 'bg-gradient-to-br from-[#10b981]/20 to-[#059669]/15 border-[#10b981]/40'
+              : 'bg-gradient-to-br from-[#10b981]/15 to-[#059669]/10 border-[#10b981]/35'
+          }`}>
+            <Circle className={`w-4 h-4 ${theme === 'dark' ? 'text-[#10b981] fill-[#10b981]' : 'text-[#059669] fill-[#059669]'}`} />
+            <span className={`text-[13px] font-medium transition-colors ${
+              theme === 'dark' ? 'text-[#10b981]' : 'text-[#059669]'
+            }`}>Verified</span>
           </div>
         );
       case 'missing-verification':
         return (
-          <div className="flex items-center gap-2 px-4 py-2 rounded-[12px] bg-[#d97706]/10 border border-[#d97706]/30">
-            <AlertCircle className="w-4 h-4 text-[#d97706]" />
-            <span className="text-[13px] font-medium text-[#d97706]">Missing Verification</span>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${
+            theme === 'dark'
+              ? 'bg-gradient-to-br from-[#f59e0b]/20 to-[#d97706]/15 border-[#f59e0b]/40'
+              : 'bg-gradient-to-br from-[#f59e0b]/15 to-[#d97706]/10 border-[#f59e0b]/35'
+          }`}>
+            <AlertCircle className={`w-4 h-4 ${theme === 'dark' ? 'text-[#f59e0b]' : 'text-[#d97706]'}`} />
+            <span className={`text-[13px] font-medium transition-colors ${
+              theme === 'dark' ? 'text-[#f59e0b]' : 'text-[#d97706]'
+            }`}>Missing Verification</span>
           </div>
         );
       case 'limit-reached':
         return (
-          <div className="flex items-center gap-2 px-4 py-2 rounded-[12px] bg-[#dc2626]/10 border border-[#dc2626]/30">
-            <CircleX className="w-4 h-4 text-[#dc2626]" />
-            <span className="text-[13px] font-medium text-[#dc2626]">Individual Limit Reached</span>
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${
+            theme === 'dark'
+              ? 'bg-gradient-to-br from-[#ef4444]/20 to-[#dc2626]/15 border-[#ef4444]/40'
+              : 'bg-gradient-to-br from-[#ef4444]/15 to-[#dc2626]/10 border-[#ef4444]/35'
+          }`}>
+            <CircleX className={`w-4 h-4 ${theme === 'dark' ? 'text-[#ef4444]' : 'text-[#dc2626]'}`} />
+            <span className={`text-[13px] font-medium transition-colors ${
+              theme === 'dark' ? 'text-[#ef4444]' : 'text-[#dc2626]'
+            }`}>Individual Limit Reached</span>
           </div>
         );
     }

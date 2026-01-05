@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Info } from 'lucide-react';
+import { Info, Sparkles } from 'lucide-react';
 import { NotificationSettings } from '../../types';
 import { NotificationSection } from './NotificationSection';
 import { NotificationRow } from './NotificationRow';
@@ -58,13 +58,16 @@ export function NotificationsTab() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
-        theme === 'dark'
-          ? 'bg-[#2d2820]/[0.4] border-white/10'
-          : 'bg-white/[0.12] border-white/20'
-      }`}>
+    <div className="relative h-[calc(100vh-300px)] min-h-[500px] overflow-hidden">
+      {/* Blurred Content */}
+      <div className="blur-sm pointer-events-none select-none h-full overflow-y-auto">
+        <div className="space-y-6">
+          {/* Header */}
+          <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-8 transition-colors ${
+            theme === 'dark'
+              ? 'bg-[#2d2820]/[0.4] border-white/10'
+              : 'bg-white/[0.12] border-white/20'
+          }`}>
         <div className="flex items-start justify-between mb-6">
           <div>
             <h2 className={`text-[28px] font-bold mb-2 transition-colors ${
@@ -212,11 +215,55 @@ export function NotificationsTab() {
         />
       </NotificationSection>
 
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <button className="px-8 py-3 rounded-[16px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[15px] shadow-[0_6px_24px_rgba(162,121,44,0.4)] hover:shadow-[0_8px_28px_rgba(162,121,44,0.5)] transition-all border border-white/10">
-          Save
-        </button>
+          {/* Save Button */}
+          <div className="flex justify-end">
+            <button className="px-8 py-3 rounded-[16px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[15px] shadow-[0_6px_24px_rgba(162,121,44,0.4)] hover:shadow-[0_8px_28px_rgba(162,121,44,0.5)] transition-all border border-white/10">
+              Save
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Coming Soon Modal Overlay */}
+      <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-auto">
+        <div className={`backdrop-blur-[40px] rounded-[32px] border shadow-[0_20px_60px_rgba(0,0,0,0.3)] p-10 max-w-lg w-full mx-4 transition-colors relative overflow-hidden ${
+          theme === 'dark'
+            ? 'bg-gradient-to-br from-[#2d2820]/[0.95] via-[#3d342c]/[0.95] to-[#2d2820]/[0.95] border-[#c9983a]/30'
+            : 'bg-gradient-to-br from-white/[0.15] via-white/[0.18] to-white/[0.15] border-[#c9983a]/40'
+        }`}>
+          {/* Golden Glow Effects */}
+          <div className="absolute inset-0 opacity-20 pointer-events-none">
+            <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-[#c9983a]/40 rounded-full blur-[60px]" />
+            <div className="absolute bottom-1/4 right-1/4 w-32 h-32 bg-[#d4af37]/30 rounded-full blur-[70px]" />
+          </div>
+          <div className="text-center relative z-10">
+            {/* Icon */}
+            <div className="w-16 h-16 mx-auto mb-5 rounded-full bg-gradient-to-br from-[#c9983a]/30 via-[#d4af37]/25 to-[#c9983a]/20 border-2 border-[#c9983a]/50 flex items-center justify-center shadow-[0_10px_30px_rgba(201,152,58,0.3)]">
+              <Sparkles className="w-8 h-8 text-[#c9983a] animate-pulse" />
+            </div>
+            
+            {/* Title */}
+            <h3 className={`text-[28px] font-black mb-3 transition-colors ${
+              theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+            }`}>
+              Coming Soon
+            </h3>
+            
+            {/* Description */}
+            <p className={`text-[15px] leading-relaxed mb-6 transition-colors ${
+              theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+            }`}>
+              Notification preferences are currently under development. We're working hard to bring you a comprehensive notification system soon!
+            </p>
+            
+            {/* Decorative Elements */}
+            <div className="flex items-center justify-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[#c9983a] animate-pulse" style={{ animationDelay: '0s' }} />
+              <div className="w-2 h-2 rounded-full bg-[#c9983a] animate-pulse" style={{ animationDelay: '0.2s' }} />
+              <div className="w-2 h-2 rounded-full bg-[#c9983a] animate-pulse" style={{ animationDelay: '0.4s' }} />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, X, Loader2, AlertCircle, Info } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, X, Loader2, AlertCircle, Info, ChevronDown, MessageSquare } from 'lucide-react';
 import { BillingProfile, BillingProfileType, BillingProfileStatus, ProfileDetailTabType, PaymentMethod, Invoice } from '../../types';
 import { initialBillingProfiles } from '../../data/billingProfilesData';
 import { sampleInvoices } from '../../data/invoicesData';
@@ -8,20 +8,33 @@ import { PaymentMethodsTab } from './PaymentMethodsTab';
 import { InvoicesTab } from './InvoicesTab';
 import { SkeletonLoader } from '../shared/SkeletonLoader';
 import { useTheme } from '../../../../shared/contexts/ThemeContext';
+import { startKYCVerification, getKYCStatus } from '../../../../shared/api/client';
+import { useBillingProfiles } from '../../contexts/BillingProfilesContext';
 
 export function BillingTab() {
   const { theme } = useTheme();
+  const { profiles, setProfiles, addProfile, updateProfile } = useBillingProfiles();
   const [isLoading, setIsLoading] = useState(false);
-  const [profiles, setProfiles] = useState<BillingProfile[]>(initialBillingProfiles);
   const [selectedProfile, setSelectedProfile] = useState<BillingProfile | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileType, setProfileType] = useState<BillingProfileType>('individual');
   const [detailTab, setDetailTab] = useState<ProfileDetailTabType>('general');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [kycStatus, setKycStatus] = useState<string | null>(null);
+  const [isCheckingKYC, setIsCheckingKYC] = useState(false);
 
   const handleCreateProfile = () => {
     if (!profileName.trim()) return;
+
+    // Check if individual profile already exists
+    if (profileType === 'individual') {
+      const existingIndividual = profiles.find(p => p.type === 'individual');
+      if (existingIndividual) {
+        alert('An individual billing profile already exists. You can only create one individual profile.');
+        return;
+      }
+    }
 
     const newProfile: BillingProfile = {
       id: Date.now(),
@@ -30,39 +43,104 @@ export function BillingTab() {
       status: 'missing-verification',
     };
 
-    setProfiles([...profiles, newProfile]);
+    addProfile(newProfile);
     setShowModal(false);
     setProfileName('');
     setProfileType('individual');
   };
 
-  const handleVerifyKYC = () => {
+  // Check KYC status on component mount and when selected profile changes
+  useEffect(() => {
+    if (selectedProfile) {
+      // Check KYC status for missing-verification profiles or verified profiles without data
+      if (selectedProfile.status === 'missing-verification' || 
+          (selectedProfile.status === 'verified' && !selectedProfile.firstName)) {
+        checkKYCStatus();
+      }
+    }
+  }, [selectedProfile]);
+
+  const checkKYCStatus = async () => {
+    setIsCheckingKYC(true);
+    try {
+      const statusResponse = await getKYCStatus();
+      setKycStatus(statusResponse.status || null);
+      
+      // If verified, update the profile with KYC data
+      if (statusResponse.status === 'verified' && statusResponse.extracted) {
+        const extracted = statusResponse.extracted as any;
+        updateProfileWithKYCData(extracted);
+      }
+    } catch (error) {
+      console.error('Failed to check KYC status:', error);
+    } finally {
+      setIsCheckingKYC(false);
+    }
+  };
+
+  const updateProfileWithKYCData = (extracted: any) => {
+    if (!selectedProfile) return;
+
+    // Preserve the original profile name
+    const updates: Partial<BillingProfile> = {
+      name: selectedProfile.name, // Preserve the original name
+      status: 'verified' as BillingProfileStatus,
+      firstName: extracted.first_name || extracted.full_name?.split(' ')[0] || '',
+      lastName: extracted.last_name || extracted.full_name?.split(' ').slice(1).join(' ') || '',
+      address: extracted.address || '',
+      city: extracted.city || '',
+      postalCode: extracted.postal_code || extracted.postalCode || '',
+      country: extracted.country || '',
+      taxId: extracted.document_number || extracted.tax_id || '',
+    };
+
+    updateProfile(selectedProfile.id, updates);
+    setSelectedProfile({ ...selectedProfile, ...updates });
+  };
+
+  const handleVerifyKYC = async () => {
     if (!selectedProfile) return;
 
     setIsVerifying(true);
+    try {
+      // Start KYC verification
+      const response = await startKYCVerification();
+      
+      // Open the KYC URL in a new window
+      if (response.url) {
+        window.open(response.url, '_blank', 'width=800,height=600');
+        
+        // Poll for status updates
+        const pollInterval = setInterval(async () => {
+          try {
+            const statusResponse = await getKYCStatus();
+            setKycStatus(statusResponse.status || null);
+            
+            if (statusResponse.status === 'verified') {
+              clearInterval(pollInterval);
+              setIsVerifying(false);
+              if (statusResponse.extracted) {
+                updateProfileWithKYCData(statusResponse.extracted);
+              }
+            } else if (statusResponse.status === 'rejected' || statusResponse.status === 'expired') {
+              clearInterval(pollInterval);
+              setIsVerifying(false);
+            }
+          } catch (error) {
+            console.error('Failed to poll KYC status:', error);
+          }
+        }, 3000); // Poll every 3 seconds
 
-    setTimeout(() => {
-      const updatedProfiles = profiles.map(profile => {
-        if (profile.id === selectedProfile.id) {
-          return {
-            ...profile,
-            status: 'verified' as BillingProfileStatus,
-            firstName: 'Alex',
-            lastName: 'Johnson',
-            address: '321 Verified Lane',
-            city: 'Los Angeles',
-            postalCode: '90001',
-            country: 'United States',
-            taxId: '555-66-7777'
-          };
-        }
-        return profile;
-      });
-
-      setProfiles(updatedProfiles);
-      setSelectedProfile(updatedProfiles.find(p => p.id === selectedProfile.id) || null);
+        // Stop polling after 5 minutes
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          setIsVerifying(false);
+        }, 5 * 60 * 1000);
+      }
+    } catch (error) {
+      console.error('Failed to start KYC verification:', error);
       setIsVerifying(false);
-    }, 2000);
+    }
   };
 
   // Payment methods handlers
@@ -232,17 +310,55 @@ export function BillingTab() {
               }`}>General Information</h3>
               
               {/* Status Badge */}
-              {selectedProfile.status === 'missing-verification' && (
-                <div className="flex items-center gap-2 px-4 py-2 rounded-[12px] bg-[#d97706]/10 border border-[#d97706]/30">
-                  <AlertCircle className="w-4 h-4 text-[#d97706]" />
-                  <span className="text-[13px] font-medium text-[#d97706]">Missing Verification</span>
+              {selectedProfile.status === 'missing-verification' && kycStatus === null && (
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-gradient-to-br from-[#f59e0b]/20 to-[#d97706]/15 border-[#f59e0b]/40'
+                    : 'bg-gradient-to-br from-[#f59e0b]/15 to-[#d97706]/10 border-[#f59e0b]/35'
+                }`}>
+                  <AlertCircle className={`w-4 h-4 ${theme === 'dark' ? 'text-[#f59e0b]' : 'text-[#d97706]'}`} />
+                  <span className={`text-[13px] font-medium transition-colors ${
+                    theme === 'dark' ? 'text-[#f59e0b]' : 'text-[#d97706]'
+                  }`}>Missing Verification</span>
+                </div>
+              )}
+              
+              {kycStatus === 'in_review' && (
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-gradient-to-br from-[#c9983a]/20 to-[#d4af37]/15 border-[#c9983a]/40'
+                    : 'bg-gradient-to-br from-[#c9983a]/15 to-[#d4af37]/10 border-[#c9983a]/35'
+                }`}>
+                  <MessageSquare className={`w-4 h-4 ${theme === 'dark' ? 'text-[#c9983a]' : 'text-[#a67c2e]'}`} />
+                  <span className={`text-[13px] font-medium transition-colors ${
+                    theme === 'dark' ? 'text-[#c9983a]' : 'text-[#a67c2e]'
+                  }`}>In Review</span>
+                </div>
+              )}
+              
+              {kycStatus === 'rejected' && (
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-gradient-to-br from-[#ef4444]/20 to-[#dc2626]/15 border-[#ef4444]/50'
+                    : 'bg-gradient-to-br from-[#ef4444]/15 to-[#dc2626]/10 border-[#ef4444]/50'
+                }`}>
+                  <AlertCircle className={`w-4 h-4 ${theme === 'dark' ? 'text-[#ef4444]' : 'text-[#dc2626]'}`} />
+                  <span className={`text-[13px] font-medium transition-colors ${
+                    theme === 'dark' ? 'text-[#ef4444]' : 'text-[#dc2626]'
+                  }`}>Verification Rejected</span>
                 </div>
               )}
               
               {selectedProfile.status === 'limit-reached' && (
-                <div className="flex items-center gap-2 px-4 py-2 rounded-[12px] bg-[#dc2626]/10 border border-[#dc2626]/30">
-                  <AlertCircle className="w-4 h-4 text-[#dc2626]" />
-                  <span className="text-[13px] font-medium text-[#dc2626]">Individual Limit Reached</span>
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-[12px] backdrop-blur-[20px] border transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-gradient-to-br from-[#ef4444]/20 to-[#dc2626]/15 border-[#ef4444]/40'
+                    : 'bg-gradient-to-br from-[#ef4444]/15 to-[#dc2626]/10 border-[#ef4444]/35'
+                }`}>
+                  <AlertCircle className={`w-4 h-4 ${theme === 'dark' ? 'text-[#ef4444]' : 'text-[#dc2626]'}`} />
+                  <span className={`text-[13px] font-medium transition-colors ${
+                    theme === 'dark' ? 'text-[#ef4444]' : 'text-[#dc2626]'
+                  }`}>Individual Limit Reached</span>
                 </div>
               )}
             </div>
@@ -381,18 +497,21 @@ export function BillingTab() {
               </div>
             </div>
 
-            {/* Verify KYC Button */}
-            {selectedProfile.status === 'missing-verification' && (
+            {/* Verify KYC Button - Only show for missing-verification status (not in_review, rejected, or verified) */}
+            {selectedProfile.status === 'missing-verification' && 
+             kycStatus !== 'in_review' && 
+             kycStatus !== 'rejected' && 
+             kycStatus !== 'verified' && (
               <div className="mt-8 flex items-center gap-4">
                 <button
                   onClick={handleVerifyKYC}
-                  disabled={isVerifying}
+                  disabled={isVerifying || isCheckingKYC}
                   className="px-8 py-3 rounded-[16px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[15px] shadow-[0_6px_24px_rgba(162,121,44,0.4)] hover:shadow-[0_8px_28px_rgba(162,121,44,0.5)] transition-all border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
-                  {isVerifying ? (
+                  {isVerifying || isCheckingKYC ? (
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
-                      Verifying KYC...
+                      {isVerifying ? 'Starting Verification...' : 'Checking Status...'}
                     </>
                   ) : (
                     'Verify KYC'
@@ -401,8 +520,38 @@ export function BillingTab() {
                 {isVerifying && (
                   <span className={`text-[14px] transition-colors ${
                     theme === 'dark' ? 'text-[#c5b5a2]' : 'text-[#6b5d4d]'
-                  }`}>Please wait while we verify your identity...</span>
+                  }`}>A new window will open for verification. Please complete the process there.</span>
                 )}
+              </div>
+            )}
+            
+            {/* In Review Message */}
+            {kycStatus === 'in_review' && (
+              <div className={`mt-8 p-4 rounded-[14px] backdrop-blur-[30px] border transition-colors ${
+                theme === 'dark'
+                  ? 'bg-gradient-to-br from-[#2d2820]/[0.4] to-[#3d342c]/[0.3] border-[#c9983a]/30'
+                  : 'bg-gradient-to-br from-white/[0.12] to-white/[0.08] border-[#c9983a]/30'
+              }`}>
+                <p className={`text-[14px] transition-colors ${
+                  theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                }`}>
+                  Your KYC verification is currently under review. Please wait while we process your information.
+                </p>
+              </div>
+            )}
+            
+            {/* Rejected Message */}
+            {kycStatus === 'rejected' && (
+              <div className={`mt-8 p-4 rounded-[14px] backdrop-blur-[30px] border transition-colors ${
+                theme === 'dark'
+                  ? 'bg-gradient-to-br from-[#2d2820]/[0.4] to-[#3d342c]/[0.3] border-[#ef4444]/50'
+                  : 'bg-gradient-to-br from-white/[0.12] to-white/[0.08] border-[#ef4444]/50'
+              }`}>
+                <p className={`text-[14px] transition-colors ${
+                  theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                }`}>
+                  Your KYC verification was rejected. Please try again or contact support for assistance.
+                </p>
               </div>
             )}
 
@@ -461,71 +610,179 @@ export function BillingTab() {
       </div>
 
       {/* Profile Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {profiles.map((profile) => (
-          <BillingProfileCard
-            key={profile.id}
-            profile={profile}
-            onClick={() => setSelectedProfile(profile)}
-          />
-        ))}
-      </div>
+      {profiles.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {profiles.map((profile) => (
+            <BillingProfileCard
+              key={profile.id}
+              profile={profile}
+              onClick={() => setSelectedProfile(profile)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className={`backdrop-blur-[40px] rounded-[24px] border shadow-[0_8px_32px_rgba(0,0,0,0.08)] p-12 text-center transition-colors ${
+          theme === 'dark'
+            ? 'bg-[#2d2820]/[0.4] border-white/10'
+            : 'bg-white/[0.12] border-white/20'
+        }`}>
+          <div className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${
+            theme === 'dark' ? 'bg-white/[0.08]' : 'bg-white/[0.15]'
+          }`}>
+            <Plus className={`w-8 h-8 ${
+              theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+            }`} />
+          </div>
+          <p className={`text-[16px] font-semibold mb-2 transition-colors ${
+            theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+          }`}>
+            No billing profiles yet
+          </p>
+          <p className={`text-[14px] transition-colors ${
+            theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+          }`}>
+            Create your first billing profile to start receiving payments
+          </p>
+        </div>
+      )}
 
       {/* Create Profile Modal */}
       {showModal && (
-        <>
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100]" onClick={() => setShowModal(false)} />
-          
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-[#d4c5b0] rounded-[24px] border-2 border-white/40 shadow-[0_20px_60px_rgba(0,0,0,0.3)] z-[101] p-8">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-[20px] font-bold text-[#2d2820]">Create Billing Profile</h3>
-              <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-[10px] bg-white/30 hover:bg-white/50 border border-white/40 flex items-center justify-center transition-all">
-                <X className="w-4 h-4 text-[#7a6b5a]" />
-              </button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className={`relative w-full max-w-md rounded-[24px] border shadow-[0_20px_60px_rgba(0,0,0,0.15)] p-8 overflow-hidden backdrop-blur-[40px] ${
+            theme === 'dark'
+              ? 'bg-gradient-to-br from-[#2d2820]/[0.4] via-[#3d342c]/[0.4] to-[#2d2820]/[0.4] border-white/10'
+              : 'bg-gradient-to-br from-white/[0.12] via-white/[0.15] to-white/[0.12] border-white/20'
+          }`}>
+            {/* Golden Glow Effects */}
+            <div className="absolute inset-0 opacity-15 pointer-events-none">
+              <div className="absolute top-1/4 left-1/4 w-32 h-32 bg-[#c9983a]/30 rounded-full blur-[60px]" />
+              <div className="absolute bottom-1/4 right-1/4 w-32 h-32 bg-[#d4af37]/25 rounded-full blur-[70px]" />
             </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-[14px] font-semibold text-[#2d2820] mb-2">Profile Name</label>
-                <input
-                  type="text"
-                  value={profileName}
-                  onChange={(e) => setProfileName(e.target.value)}
-                  placeholder="Enter profile name"
-                  className="w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] bg-white/[0.15] border border-white/25 text-[#2d2820] placeholder-[#7a6b5a] focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px]"
-                />
+            
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className={`text-[20px] font-bold transition-colors ${
+                  theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+                }`}>Create Billing Profile</h3>
+                <button onClick={() => setShowModal(false)} className={`w-8 h-8 rounded-[10px] backdrop-blur-[20px] border flex items-center justify-center transition-all ${
+                  theme === 'dark'
+                    ? 'bg-white/[0.1] hover:bg-white/[0.15] border-white/20'
+                    : 'bg-white/[0.3] hover:bg-white/[0.5] border-white/40'
+                }`}>
+                  <X className={`w-4 h-4 transition-colors ${
+                    theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                  }`} />
+                </button>
               </div>
 
-              <div>
-                <label className="block text-[14px] font-semibold text-[#2d2820] mb-2">Profile Type</label>
-                <select
-                  value={profileType}
-                  onChange={(e) => setProfileType(e.target.value as BillingProfileType)}
-                  className="w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] bg-white/[0.15] border border-white/25 text-[#2d2820] focus:outline-none focus:bg-white/[0.2] focus:border-[#c9983a]/30 transition-all text-[14px]"
+              <div className="space-y-4">
+                <div>
+                  <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+                    theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+                  }`}>Profile Name</label>
+                  <input
+                    type="text"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    placeholder="Enter profile name"
+                    className={`w-full px-4 py-3 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:border-[#c9983a]/30 transition-all text-[14px] ${
+                      theme === 'dark'
+                        ? 'bg-white/[0.08] border-white/15 text-[#f5efe5] placeholder-[#8a7e70] focus:bg-white/[0.12]'
+                        : 'bg-white/[0.15] border-white/25 text-[#2d2820] placeholder-[#7a6b5a] focus:bg-white/[0.2]'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className={`block text-[14px] font-semibold mb-2 transition-colors ${
+                    theme === 'dark' ? 'text-[#f5efe5]' : 'text-[#2d2820]'
+                  }`}>Profile Type</label>
+                  <div className="relative">
+                    {(() => {
+                      const hasIndividualProfile = profiles.some(p => p.type === 'individual');
+                      return (
+                        <select
+                          value={profileType}
+                          onChange={(e) => setProfileType(e.target.value as BillingProfileType)}
+                          className={`w-full px-4 py-3 pr-10 rounded-[14px] backdrop-blur-[30px] border focus:outline-none focus:border-[#c9983a]/30 transition-all text-[14px] appearance-none cursor-pointer ${
+                            theme === 'dark'
+                              ? 'bg-white/[0.08] border-white/15 text-[#f5efe5] focus:bg-white/[0.12]'
+                              : 'bg-white/[0.15] border-white/25 text-[#2d2820] focus:bg-white/[0.2]'
+                          }`}
+                          style={{
+                            colorScheme: theme === 'dark' ? 'dark' : 'light',
+                          }}
+                        >
+                          <option 
+                            value="individual" 
+                            disabled={hasIndividualProfile}
+                            style={theme === 'dark' 
+                              ? { backgroundColor: '#2d2820', color: hasIndividualProfile ? '#8a7e70' : '#f5efe5' } 
+                              : { backgroundColor: '#f9fafb', color: hasIndividualProfile ? '#9ca3af' : '#1f2937' }
+                            }
+                          >
+                            Individual{hasIndividualProfile ? ' (Already Created)' : ''}
+                          </option>
+                          <option 
+                            value="self-employed" 
+                            disabled 
+                            style={theme === 'dark' 
+                              ? { backgroundColor: '#2d2820', color: '#8a7e70' } 
+                              : { backgroundColor: '#f9fafb', color: '#9ca3af' }
+                            }
+                          >
+                            Self-Employed (Coming Soon)
+                          </option>
+                          <option 
+                            value="organization" 
+                            disabled 
+                            style={theme === 'dark' 
+                              ? { backgroundColor: '#2d2820', color: '#8a7e70' } 
+                              : { backgroundColor: '#f9fafb', color: '#9ca3af' }
+                            }
+                          >
+                            Organization (Coming Soon)
+                          </option>
+                        </select>
+                      );
+                    })()}
+                    <ChevronDown className={`absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 pointer-events-none transition-colors ${
+                      theme === 'dark' ? 'text-[#b8a898]' : 'text-[#7a6b5a]'
+                    }`} />
+                  </div>
+                  {profiles.some(p => p.type === 'individual') && (
+                    <p className={`text-[12px] mt-2 transition-colors ${
+                      theme === 'dark' ? 'text-[#8a7e70]' : 'text-[#6b7280]'
+                    }`}>
+                      An individual profile already exists. You can only create one individual profile.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 mt-6">
+                <button
+                  onClick={() => setShowModal(false)}
+                  className={`flex-1 px-6 py-3 rounded-[12px] backdrop-blur-[30px] border font-medium text-[14px] transition-all ${
+                    theme === 'dark'
+                      ? 'bg-white/[0.1] border-white/20 text-[#d4c5b0] hover:bg-white/[0.15]'
+                      : 'bg-white/[0.2] border-white/30 text-[#2d2820] hover:bg-white/[0.25]'
+                  }`}
                 >
-                  <option value="individual">Individual</option>
-                  <option value="self-employed">Self-Employed</option>
-                  <option value="organization">Organization</option>
-                </select>
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateProfile}
+                  disabled={profileType === 'individual' && profiles.some(p => p.type === 'individual')}
+                  className="flex-1 px-6 py-3 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_4px_16px_rgba(162,121,44,0.3)] hover:shadow-[0_6px_20px_rgba(162,121,44,0.4)] transition-all border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Create
+                </button>
               </div>
-            </div>
-
-            <div className="flex items-center gap-3 mt-6">
-              <button
-                onClick={() => setShowModal(false)}
-                className="flex-1 px-6 py-3 rounded-[12px] backdrop-blur-[30px] bg-white/[0.2] border border-white/30 text-[#2d2820] font-medium text-[14px] hover:bg-white/[0.25] transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateProfile}
-                className="flex-1 px-6 py-3 rounded-[12px] bg-gradient-to-br from-[#c9983a] to-[#a67c2e] text-white font-semibold text-[14px] shadow-[0_4px_16px_rgba(162,121,44,0.3)] hover:shadow-[0_6px_20px_rgba(162,121,44,0.4)] transition-all border border-white/10"
-              >
-                Create
-              </button>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
