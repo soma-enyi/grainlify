@@ -21,8 +21,9 @@ export function SignInPage() {
   }, [navigate]);
 
   const handleGitHubSignIn = () => {
-    console.log('Sign in button clicked');
+    if (isRedirecting) return;
     setIsRedirecting(true);
+    console.log('Sign in button clicked');
     const githubUrl = getGitHubLoginUrl();
     console.log('Redirecting to:', githubUrl);
     // Redirect to GitHub OAuth
