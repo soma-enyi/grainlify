@@ -87,45 +87,6 @@ export function DashboardTab({ selectedProjects, onRefresh, onNavigateToIssue }:
         return dateB - dateA;
       });
 
-      // MOCK DATA INJECTION
-      allIssues.push({
-        github_issue_id: 12345,
-        number: 42,
-        title: 'Fix the flux capacitor',
-        state: 'open',
-        comments_count: 3,
-        updated_at: new Date().toISOString(),
-        last_seen_at: new Date().toISOString(),
-        projectName: 'mock-org/mock-repo',
-        projectId: 'mock-p-1',
-        html_url: 'https://github.com/mock-org/mock-repo/issues/42'
-      });
-      allIssues.push({
-        github_issue_id: 67890,
-        number: 101,
-        title: 'Add structured logging',
-        state: 'open',
-        comments_count: 1,
-        updated_at: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
-        last_seen_at: new Date(Date.now() - 3600000).toISOString(),
-        projectName: 'mock-org/utils',
-        projectId: 'mock-p-2',
-        html_url: 'https://github.com/mock-org/utils/issues/101'
-      });
-      allIssues.push({
-        github_issue_id: 11223,
-        number: 5,
-        title: 'Update documentation',
-        state: 'open',
-        comments_count: 0,
-        updated_at: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-        last_seen_at: new Date(Date.now() - 86400000).toISOString(),
-        projectName: 'mock-org/core',
-        projectId: 'mock-p-3',
-        html_url: 'https://github.com/mock-org/core/issues/5'
-      });
-      // END MOCK DATA
-
       setIssues(allIssues);
       setPrs(allPRs);
       setIsLoading(false);
