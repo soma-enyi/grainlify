@@ -93,13 +93,15 @@ func New(cfg config.Config, deps Deps) *fiber.App {
 			return true
 		}
 
+		// Check explicit CORS origins from config
 		if _, ok := explicitOrigins[origin]; ok {
 			return true
 		}
 
-		// If FrontendBaseURL is set, allow it.
+		// If FrontendBaseURL is set, allow it (exact match or with path)
 		if cfg.FrontendBaseURL != "" {
-			if origin == cfg.FrontendBaseURL || strings.HasPrefix(origin, cfg.FrontendBaseURL+"/") {
+			frontendBase := strings.TrimSuffix(cfg.FrontendBaseURL, "/")
+			if origin == frontendBase || strings.HasPrefix(origin, frontendBase+"/") {
 				return true
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"net/url"
 	"strings"
 	"time"
@@ -134,6 +135,8 @@ func (h *GitHubOAuthHandler) LoginStart() fiber.Handler {
 
 		// Get redirect_uri from query parameter (frontend origin)
 		redirectURI := c.Query("redirect")
+		slog.Info("OAuth login start - received redirect parameter", "redirect", redirectURI)
+		
 		// Validate redirect_uri is a valid URL and from an allowed origin
 		if redirectURI != "" {
 			parsedURL, err := url.Parse(redirectURI)
@@ -165,8 +168,10 @@ INSERT INTO oauth_states (state, user_id, kind, expires_at, redirect_uri)
 VALUES ($1, NULL, 'github_login', $2, $3)
 `, state, expiresAt, redirectURI)
 		if err != nil {
+			slog.Error("OAuth login start - failed to store state", "error", err)
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "state_create_failed"})
 		}
+		slog.Info("OAuth login start - stored redirect_uri in state", "redirect_uri", redirectURI, "state", state)
 
 		// Login scopes: identity + email + repo access for later project verification.
 		authURL, err := github.AuthorizeURL(h.cfg.GitHubOAuthClientID, effectiveGitHubRedirect(h.cfg), state, []string{"read:user", "user:email", "repo", "admin:repo_hook", "read:org"})
@@ -216,6 +221,18 @@ WHERE state = $1
 		}
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "state_lookup_failed"})
+		}
+
+		// Log the retrieved redirect_uri for debugging
+		if storedRedirectURI != nil && *storedRedirectURI != "" {
+			slog.Info("OAuth callback - retrieved redirect_uri from state",
+				"redirect_uri", *storedRedirectURI,
+				"kind", storedKind,
+			)
+		} else {
+			slog.Info("OAuth callback - no redirect_uri in state, will use fallback",
+				"kind", storedKind,
+			)
 		}
 
 		_, _ = h.db.Pool.Exec(c.Context(), `DELETE FROM oauth_states WHERE state = $1`, state)
@@ -308,24 +325,36 @@ UPDATE users SET github_user_id = $2, updated_at = now() WHERE id = $1
 			// 1. Stored redirect_uri from frontend (enables multi-environment support)
 			// 2. Config GitHubLoginSuccessRedirectURL
 			// 3. Construct from FrontendBaseURL
+			// IMPORTANT: Always redirect to override GitHub's Homepage URL default
 			var redirectURL string
 			if storedRedirectURI != nil && *storedRedirectURI != "" {
 				// Use the redirect_uri provided by the frontend (supports preview deployments, forks, etc.)
 				redirectURL = strings.TrimSuffix(*storedRedirectURI, "/") + "/auth/callback"
+				slog.Info("OAuth redirect - using stored redirect_uri", "redirect_url", redirectURL)
 			} else if h.cfg.GitHubLoginSuccessRedirectURL != "" {
 				redirectURL = h.cfg.GitHubLoginSuccessRedirectURL
+				slog.Info("OAuth redirect - using GitHubLoginSuccessRedirectURL", "redirect_url", redirectURL)
 			} else if h.cfg.FrontendBaseURL != "" {
 				redirectURL = strings.TrimSuffix(h.cfg.FrontendBaseURL, "/") + "/auth/callback"
+				slog.Info("OAuth redirect - using FrontendBaseURL", "redirect_url", redirectURL)
+			} else {
+				slog.Warn("OAuth redirect - no redirect URL configured, cannot redirect user")
 			}
 
+			// Always redirect if we have a URL (this overrides GitHub's Homepage URL)
 			if redirectURL != "" {
 				ru, err := url.Parse(redirectURL)
-				if err == nil {
+				if err != nil {
+					slog.Error("OAuth redirect - failed to parse redirect URL", "error", err, "redirect_url", redirectURL)
+					// Fall through to JSON response
+				} else {
 					q := ru.Query()
 					q.Set("token", jwtToken)
 					q.Set("github", u.Login)
 					ru.RawQuery = q.Encode()
-					return c.Redirect(ru.String(), fiber.StatusFound)
+					finalRedirectURL := ru.String()
+					slog.Info("OAuth redirect - redirecting user", "final_redirect_url", finalRedirectURL)
+					return c.Redirect(finalRedirectURL, fiber.StatusFound)
 				}
 			}
 

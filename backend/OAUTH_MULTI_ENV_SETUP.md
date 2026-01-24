@@ -33,13 +33,19 @@ export const getGitHubLoginUrl = () => {
 - Production: `https://api.grainlify.com/auth/github/login/start?redirect=https%3A%2F%2Fgrainlify.0xo.in`
 - Preview: `https://api.grainlify.com/auth/github/login/start?redirect=https%3A%2F%2Fgrainlify-xyz.vercel.app`
 
-### 2. Backend Stores Redirect URI
+### 2. Backend Stores Redirect URI (with Security Validation)
 
 The backend `LoginStart` handler:
 - Accepts the `redirect` query parameter
-- Validates it's a valid URL
+- **Validates it's from an allowed origin** (security check):
+  - ✅ localhost origins (for development)
+  - ✅ `*.vercel.app` domains (for preview deployments)
+  - ✅ Explicit origins from `CORS_ORIGINS` config
+  - ✅ `FrontendBaseURL` (if configured)
 - Stores it in the `oauth_states` table along with the OAuth state
 - Redirects user to GitHub OAuth
+
+**Security:** This prevents open redirect vulnerabilities by only allowing redirects to trusted origins.
 
 ```go
 // Backend stores redirect_uri in oauth_states table
@@ -76,10 +82,28 @@ After successful authentication, the backend:
 
 ### GitHub OAuth App Settings
 
-**Callback URL (set once, never change):**
-```
-https://grainlify-production.up.railway.app/auth/github/login/callback
-```
+**⚠️ IMPORTANT: Update these in GitHub OAuth App settings**
+
+1. **Homepage URL** (PRODUCTION):
+   ```
+   https://grainlify.0xo.in
+   ```
+   - ❌ **DO NOT** use `localhost` in production
+   - This is used by GitHub as the default landing page
+   - Should point to your production frontend
+
+2. **Authorization callback URL** (BACKEND - set once, never change):
+   ```
+   https://api.grainlify.0xo.in/auth/github/login/callback
+   ```
+   - This is the single callback URL that works for all environments
+   - Must match `GITHUB_OAUTH_REDIRECT_URL` in backend config
+   - Never changes, even for preview deployments
+
+**Why this matters:**
+- If Homepage URL is set to `localhost`, GitHub will redirect users to localhost after OAuth
+- The backend controls the final redirect via the `redirect` parameter
+- Homepage URL should always be production frontend
 
 ### Backend Environment Variables
 
@@ -150,6 +174,23 @@ Migration file: `migrations/000024_add_redirect_uri_to_oauth_states.up.sql`
 2. Click "Sign in with GitHub"
 3. Should redirect back to `http://localhost:5173/auth/callback` after auth
 
+## Security
+
+The backend validates redirect URIs to prevent open redirect vulnerabilities. Only these origins are allowed:
+
+1. **localhost origins** - `http://localhost:*` or `https://localhost:*`
+2. **Vercel preview deployments** - Any `*.vercel.app` domain
+3. **Explicit CORS origins** - Origins listed in `CORS_ORIGINS` env var
+4. **FrontendBaseURL** - If `FRONTEND_BASE_URL` is configured
+
+If a redirect URI is not from an allowed origin, the backend will return:
+```json
+{
+  "error": "redirect_uri_not_allowed",
+  "message": "Redirect URI must be from an allowed origin (localhost, *.vercel.app, or configured CORS origins)"
+}
+```
+
 ## Troubleshooting
 
 **Issue:** User not redirected to correct frontend
@@ -160,6 +201,15 @@ Migration file: `migrations/000024_add_redirect_uri_to_oauth_states.up.sql`
 **Issue:** Invalid redirect_uri error
 - Ensure frontend passes a valid URL (with protocol: `https://` or `http://`)
 - Check backend logs for validation errors
+
+**Issue:** `redirect_uri_not_allowed` error
+- The redirect URI must be from an allowed origin
+- For custom domains, add them to `CORS_ORIGINS` env var
+- For Vercel previews, ensure the domain ends with `.vercel.app`
+
+**Issue:** User redirected to localhost in production
+- Check GitHub OAuth App settings - **Homepage URL** should be production frontend
+- Backend redirect should override this, but GitHub may use Homepage URL as fallback
 
 **Issue:** Falls back to config URL
 - This is expected if `redirect` parameter is not provided
