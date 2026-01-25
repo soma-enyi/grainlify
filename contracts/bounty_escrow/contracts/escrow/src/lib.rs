@@ -287,6 +287,118 @@ mod monitoring {
 }
 // ==================== END MONITORING MODULE ====================
 
+// ==================== ANTI-ABUSE MODULE ====================
+mod anti_abuse {
+    use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol};
+
+    #[contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct AntiAbuseConfig {
+        pub window_size: u64,      // Window size in seconds
+        pub max_operations: u32,   // Max operations allowed in window
+        pub cooldown_period: u64, // Minimum seconds between operations
+    }
+
+    #[contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub struct AddressState {
+        pub last_operation_timestamp: u64,
+        pub window_start_timestamp: u64,
+        pub operation_count: u32,
+    }
+
+    #[contracttype]
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    pub enum AntiAbuseKey {
+        Config,
+        State(Address),
+        Whitelist(Address),
+    }
+
+    pub fn get_config(env: &Env) -> AntiAbuseConfig {
+        env.storage()
+            .instance()
+            .get(&AntiAbuseKey::Config)
+            .unwrap_or(AntiAbuseConfig {
+                window_size: 3600, // 1 hour default
+                max_operations: 10,
+                cooldown_period: 60, // 1 minute default
+            })
+    }
+
+    pub fn set_config(env: &Env, config: AntiAbuseConfig) {
+        env.storage().instance().set(&AntiAbuseKey::Config, &config);
+    }
+
+    pub fn is_whitelisted(env: &Env, address: Address) -> bool {
+        env.storage()
+            .instance()
+            .has(&AntiAbuseKey::Whitelist(address))
+    }
+
+    pub fn set_whitelist(env: &Env, address: Address, whitelisted: bool) {
+        if whitelisted {
+            env.storage()
+                .instance()
+                .set(&AntiAbuseKey::Whitelist(address), &true);
+        } else {
+            env.storage()
+                .instance()
+                .remove(&AntiAbuseKey::Whitelist(address));
+        }
+    }
+
+    pub fn check_rate_limit(env: &Env, address: Address) {
+        if is_whitelisted(env, address.clone()) {
+            return;
+        }
+
+        let config = get_config(env);
+        let now = env.ledger().timestamp();
+        let key = AntiAbuseKey::State(address.clone());
+
+        let mut state: AddressState = env.storage().persistent().get(&key).unwrap_or(AddressState {
+            last_operation_timestamp: 0,
+            window_start_timestamp: now,
+            operation_count: 0,
+        });
+
+        // 1. Cooldown check
+        if state.last_operation_timestamp > 0
+            && now < state.last_operation_timestamp.saturating_add(config.cooldown_period)
+        {
+            env.events().publish(
+                (symbol_short!("abuse"), symbol_short!("cooldown")),
+                (address.clone(), now),
+            );
+            panic!("Operation in cooldown period");
+        }
+
+        // 2. Window check
+        if now >= state.window_start_timestamp.saturating_add(config.window_size) {
+            // New window
+            state.window_start_timestamp = now;
+            state.operation_count = 1;
+        } else {
+            // Same window
+            if state.operation_count >= config.max_operations {
+                env.events().publish(
+                    (symbol_short!("abuse"), symbol_short!("limit")),
+                    (address.clone(), now),
+                );
+                panic!("Rate limit exceeded");
+            }
+            state.operation_count += 1;
+        }
+
+        state.last_operation_timestamp = now;
+        env.storage().persistent().set(&key, &state);
+
+        // Extend TTL for state (approx 1 day)
+        env.storage().persistent().extend_ttl(&key, 17280, 17280);
+    }
+}
+
 // ============================================================================
 // Error Definitions
 // ============================================================================
@@ -461,6 +573,9 @@ impl BountyEscrowContract {
     /// # Gas Cost
     /// Low - Only two storage writes
     pub fn init(env: Env, admin: Address, token: Address) -> Result<(), Error> {
+        // Apply rate limiting
+        anti_abuse::check_rate_limit(&env, admin.clone());
+
         let start = env.ledger().timestamp();
         let caller = admin.clone();
 
@@ -555,6 +670,9 @@ impl BountyEscrowContract {
         amount: i128,
         deadline: u64,
     ) -> Result<(), Error> {
+        // Apply rate limiting
+        anti_abuse::check_rate_limit(&env, depositor.clone());
+
         let start = env.ledger().timestamp();
         let caller = depositor.clone();
 
@@ -705,6 +823,10 @@ impl BountyEscrowContract {
 
         // Verify admin authorization
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        
+        // Apply rate limiting
+        anti_abuse::check_rate_limit(&env, admin.clone());
+
         admin.require_auth();
 
         // Verify bounty exists
@@ -823,6 +945,9 @@ impl BountyEscrowContract {
     /// // Current time must be > deadline
     /// ```
     pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
+        // Apply rate limiting to the caller (permissionless, but still trackable)
+        anti_abuse::check_rate_limit(&env, env.current_contract_address());
+
         let start = env.ledger().timestamp();
 
         if env.storage().instance().has(&DataKey::ReentrancyGuard) {
@@ -992,8 +1117,53 @@ impl BountyEscrowContract {
     }
 
     /// Get performance stats for a function
+    /// Get performance stats for a function
     pub fn get_performance_stats(env: Env, function_name: Symbol) -> monitoring::PerformanceStats {
         monitoring::get_performance_stats(&env, function_name)
+    }
+
+    // ========================================================================
+    // Anti-Abuse Administrative Functions
+    // ========================================================================
+
+    /// Updates the rate limit configuration.
+    /// Only the admin can call this.
+    pub fn update_rate_limit_config(
+        env: Env,
+        window_size: u64,
+        max_operations: u32,
+        cooldown_period: u64,
+    ) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("Admin not set");
+        admin.require_auth();
+
+        anti_abuse::set_config(
+            &env,
+            anti_abuse::AntiAbuseConfig {
+                window_size,
+                max_operations,
+                cooldown_period,
+            },
+        );
+    }
+
+    /// Adds or removes an address from the whitelist.
+    /// Only the admin can call this.
+    pub fn set_whitelist(env: Env, address: Address, whitelisted: bool) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).expect("Admin not set");
+        admin.require_auth();
+
+        anti_abuse::set_whitelist(&env, address, whitelisted);
+    }
+
+    /// Checks if an address is whitelisted.
+    pub fn is_whitelisted(env: Env, address: Address) -> bool {
+        anti_abuse::is_whitelisted(&env, address)
+    }
+
+    /// Gets the current rate limit configuration.
+    pub fn get_rate_limit_config(env: Env) -> anti_abuse::AntiAbuseConfig {
+        anti_abuse::get_config(&env)
     }
 }
 
