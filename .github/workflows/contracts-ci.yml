@@ -41,6 +41,7 @@ jobs:
 
       - name: Install Rust target for Soroban
         run: |
+          source $HOME/.cargo/env
           rustup target add wasm32v1-none
 
       - name: Install Stellar CLI with Homebrew
@@ -64,21 +65,25 @@ jobs:
 
       - name: Check code formatting
         run: |
+          source $HOME/.cargo/env
           cd bounty_escrow/contracts/escrow
           cargo fmt --check --all
 
       - name: Build contracts
         run: |
+          source $HOME/.cargo/env
           cd bounty_escrow/contracts/escrow
           cargo build --release --target wasm32v1-none
 
       - name: Run tests
         run: |
+          source $HOME/.cargo/env
           cd bounty_escrow/contracts/escrow
           cargo test --verbose --lib
 
       - name: Build Soroban contract
         run: |
+          source $HOME/.cargo/env
           cd bounty_escrow/contracts/escrow
           stellar contract build --verbose
 
@@ -92,6 +97,7 @@ jobs:
 
       - name: Stellar build check
         run: |
+          source $HOME/.cargo/env
           # Verify WASM files were generated
           echo "Checking for generated WASM files..."
           wasm_file="bounty_escrow/target/wasm32v1-none/release/bounty_escrow.wasm"
