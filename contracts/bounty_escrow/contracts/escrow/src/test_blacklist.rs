@@ -1,14 +1,9 @@
 #[cfg(test)]
 mod blacklist_tests {
-    use soroban_sdk::{
-        testutils::Address as _,
-        Address, Env,
-    };
     use crate::BountyEscrowContract;
+    use soroban_sdk::{testutils::Address as _, Address, Env};
 
-    fn create_test_contract(
-        env: &Env,
-    ) -> (Address, BountyEscrowContract) {
+    fn create_test_contract(env: &Env) -> (Address, BountyEscrowContract) {
         let contract_id = env.register_contract(None, BountyEscrowContract);
         (contract_id, BountyEscrowContract)
     }
@@ -21,7 +16,7 @@ mod blacklist_tests {
         let admin = Address::generate(&env);
         let token = Address::generate(&env);
         let depositor = Address::generate(&env);
-        
+
         let (contract_id, _) = create_test_contract(&env);
 
         env.as_contract(&contract_id, || {
@@ -40,7 +35,10 @@ mod blacklist_tests {
                 env.ledger().timestamp() + 10000,
             );
 
-            assert!(result.is_err(), "Lock funds should fail for blacklisted address");
+            assert!(
+                result.is_err(),
+                "Lock funds should fail for blacklisted address"
+            );
         });
     }
 
@@ -52,7 +50,7 @@ mod blacklist_tests {
         let admin = Address::generate(&env);
         let token = Address::generate(&env);
         let depositor = Address::generate(&env);
-        
+
         let (contract_id, _) = create_test_contract(&env);
 
         env.as_contract(&contract_id, || {
@@ -70,7 +68,10 @@ mod blacklist_tests {
                 1000,
                 env.ledger().timestamp() + 10000,
             );
-            assert!(result.is_err(), "Lock funds should fail for non-whitelisted address in whitelist mode");
+            assert!(
+                result.is_err(),
+                "Lock funds should fail for non-whitelisted address in whitelist mode"
+            );
         });
     }
 }

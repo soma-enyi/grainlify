@@ -94,8 +94,8 @@ mod test_blacklist;
 mod test_bounty_escrow;
 
 use blacklist::{
-    add_to_blacklist, add_to_whitelist, is_participant_allowed,
-    remove_from_blacklist, remove_from_whitelist, set_whitelist_mode,
+    add_to_blacklist, add_to_whitelist, is_participant_allowed, remove_from_blacklist,
+    remove_from_whitelist, set_whitelist_mode,
 };
 use events::{
     emit_batch_funds_locked, emit_batch_funds_released, emit_contract_paused,
@@ -1142,7 +1142,12 @@ impl BountyEscrowContract {
     ///
     /// # Authorization
     /// - Admin only
-    pub fn set_blacklist(env: Env, address: Address, blocked: bool, reason: Option<String>) -> Result<(), Error> {
+    pub fn set_blacklist(
+        env: Env,
+        address: Address,
+        blocked: bool,
+        reason: Option<String>,
+    ) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
@@ -2635,6 +2640,6 @@ mod test_fuzz_properties;
 #[cfg(test)]
 mod test_edge_cases;
 
+mod pause_tests;
 #[cfg(test)]
 mod test_invalid_inputs;
-mod pause_tests;
